@@ -130,38 +130,126 @@ bst_node *bst_insert(bst *self, int value) {
   return new_node;
 }
 
-bst_node *bst_minimum(const bst *self) {
-  if (self == NULL || self->root == NULL) {
+static bst_node *bst_minimum_node(bst_node *node) {
+  if (node == NULL) {
     return NULL;
   }
-  bst_node *cur = self->root;
-  while (cur->left != NULL) {
-    cur = cur->left;
+  while (node->left != NULL) {
+    node = node->left;
   }
-  return cur;
+  return node;
+}
+
+static bst_node *bst_maximum_node(bst_node *node) {
+  if (node == NULL) {
+    return NULL;
+  }
+  while (node->right != NULL) {
+    node = node->right;
+  }
+  return node;
+}
+
+bst_node *bst_minimum(const bst *self) {
+  if (self == NULL) {
+    return NULL;
+  }
+  return bst_minimum_node(self->root);
 }
 
 bst_node *bst_maximum(const bst *self) {
-  if (self == NULL || self->root == NULL) {
+  if (self == NULL) {
     return NULL;
   }
-  bst_node *cur = self->root;
-  while (cur->right != NULL) {
-    cur = cur->right;
-  }
-  return cur;
+  return bst_maximum_node(self->root);
 }
 
 bst_node *bst_predecessor(bst_node *self) {
-  // TODO dummy instruction that MUST be changed
-  return NULL;
+  if (self == NULL) {
+    return NULL;
+  }
+
+  if (self->left != NULL) {
+    return bst_maximum_node(self->left);
+  }
+
+  bst_node *current = self;
+  bst_node *ancestor = self->parent;
+
+  while (ancestor != NULL && current == ancestor->left) {
+    current = ancestor;
+    ancestor = ancestor->parent;
+  }
+
+  return ancestor;
 }
 
 bst_node *bst_successor(bst_node *self) {
-  // TODO dummy instruction that MUST be changed
-  return NULL;
+  if (self == NULL) {
+    return NULL;
+  }
+
+  if (self->right != NULL) {
+    return bst_minimum_node(self->right);
+  }
+
+  bst_node *current = self;
+  bst_node *ancestor = self->parent;
+
+  while (ancestor != NULL && current == ancestor->right) {
+    current = ancestor;
+    ancestor = ancestor->parent;
+  }
+
+  return ancestor;
+}
+
+static void bst_transplant(bst *tree, bst_node *u, bst_node *v) {
+  if (u->parent == NULL) {
+    tree->root = v;
+  } else if (u == u->parent->left) {
+    u->parent->left = v;
+  } else {
+    u->parent->right = v;
+  }
+
+  if (v != NULL) {
+    v->parent = u->parent;
+  }
 }
 
 void bst_delete(bst *self, bst_node *node) {
-  // TODO dummy instruction that MUST be changed
+  if (self == NULL || node == NULL) {
+    return;
+  }
+
+  if (node->left == NULL) {
+    bst_transplant(self, node, node->right);
+    free(node);
+    return;
+  }
+
+  if (node->right == NULL) {
+    bst_transplant(self, node, node->left);
+    free(node);
+    return;
+  }
+
+  bst_node *y = bst_minimum_node(node->right);
+
+  if (y->parent != node) {
+    bst_transplant(self, y, y->right);
+    y->right = node->right;
+    if (y->right != NULL) {
+      y->right->parent = y;
+    }
+  }
+
+  bst_transplant(self, node, y);
+  y->left = node->left;
+  if (y->left != NULL) {
+    y->left->parent = y;
+  }
+
+  free(node);
 }
