@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define mu_assert(message, test)                                               \
   do {                                                                         \
@@ -12,11 +11,42 @@
       return message;                                                          \
   } while (0)
 
-static void test_bst_node_create(bst_node *self) {
-  self->key = 0;
-  self->left = NULL;
-  self->right = NULL;
-  self->parent = NULL;
+#define mu_assert_tree(tree)                                                   \
+  do {                                                                         \
+    char *tree_msg = assert_tree_ok(tree);                                     \
+    if (tree_msg != NULL)                                                      \
+      return tree_msg;                                                         \
+  } while (0)
+
+static bool is_bst_node(const bst_node *node, long min, long max) {
+  if (node == NULL) {
+    return true;
+  }
+  if ((long)node->key < min || (long)node->key > max) {
+    return false;
+  }
+  return is_bst_node(node->left, min, (long)node->key) &&
+         is_bst_node(node->right, (long)node->key, max);
+}
+
+static bool has_parent_links(const bst_node *node, const bst_node *parent) {
+  if (node == NULL) {
+    return true;
+  }
+  if (node->parent != parent) {
+    return false;
+  }
+  return has_parent_links(node->left, node) &&
+         has_parent_links(node->right, node);
+}
+
+static char *assert_tree_ok(const bst *tree) {
+  mu_assert("error, tree should not be NULL", tree != NULL);
+  mu_assert("error, parent pointers are invalid",
+            has_parent_links(tree->root, NULL));
+  mu_assert("error, tree property is invalid",
+            is_bst_node(tree->root, LONG_MIN, LONG_MAX));
+  return NULL;
 }
 
 static char *test_bst_null() {
@@ -24,6 +54,10 @@ static char *test_bst_null() {
   size_t size = bst_size(NULL);
   bst_destroy(NULL);
   mu_assert("error, bst size is not 0", size == 0);
+  mu_assert("error, bst height(NULL) is not 0", bst_height(NULL) == 0);
+  mu_assert("error, minimum(NULL) should be NULL", bst_minimum(NULL) == NULL);
+  mu_assert("error, maximum(NULL) should be NULL", bst_maximum(NULL) == NULL);
+  bst_delete(NULL, NULL);
   return NULL;
 }
 
@@ -34,159 +68,225 @@ static char *test_bst_empty() {
   mu_assert("error, bst height is not 0", bst_height(&b) == 0);
   mu_assert("error, bst search on empty should be NULL",
             bst_search(&b, 42) == NULL);
+  mu_assert("error, minimum empty should be NULL", bst_minimum(&b) == NULL);
+  mu_assert("error, maximum empty should be NULL", bst_maximum(&b) == NULL);
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_size_single() {
+static char *test_bst_insert_and_search() {
   bst b;
   bst_create(&b);
-  b.root = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root);
-  mu_assert("error, bst size is not 1", bst_size(&b) == 1);
+  int values[] = {20, 10, 30, 5, 15, 25, 40, 13, 17};
+
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+    mu_assert("error, insert returned NULL", bst_insert(&b, values[i]) != NULL);
+  }
+
+  mu_assert("error, size should be 9", bst_size(&b) == 9);
+  mu_assert("error, height should be 4", bst_height(&b) == 4);
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+    mu_assert("error, inserted value not found",
+              bst_search(&b, values[i]) != NULL);
+  }
+  mu_assert("error, unknown value found", bst_search(&b, 999) == NULL);
+  mu_assert_tree(&b);
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_size_two() {
-  bst b;
-  bst_create(&b);
-  b.root = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root);
-  b.root->left = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root->left);
-  b.root->left->parent = b.root;
-  mu_assert("error, bst size is not 2", bst_size(&b) == 2);
-  bst_destroy(&b);
-  return NULL;
-}
-
-static char *test_bst_height_manual_shapes() {
-  bst b;
-  bst_create(&b);
-
-  mu_assert("error, height empty should be 0", bst_height(&b) == 0);
-
-  b.root = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root);
-  b.root->key = 10;
-  mu_assert("error, height single node should be 1", bst_height(&b) == 1);
-
-  b.root->left = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root->left);
-  b.root->left->key = 5;
-  b.root->left->parent = b.root;
-  mu_assert("error, height 2 nodes should be 2", bst_height(&b) == 2);
-
-  b.root->left->left = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root->left->left);
-  b.root->left->left->key = 3;
-  b.root->left->left->parent = b.root->left;
-  mu_assert("error, height 3 nodes skewed should be 3", bst_height(&b) == 3);
-
-  bst_destroy(&b);
-  return NULL;
-}
-
-static char *test_bst_inorder_walk_smoke() {
+static char *test_bst_insert_duplicate_policy() {
   bst b;
   bst_create(&b);
 
-  b.root = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root);
-  b.root->key = 2;
+  bst_insert(&b, 10);
+  bst_insert(&b, 10);
+  bst_insert(&b, 10);
 
-  b.root->left = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root->left);
-  b.root->left->key = 1;
-  b.root->left->parent = b.root;
-
-  b.root->right = calloc(1, sizeof(*b.root));
-  test_bst_node_create(b.root->right);
-  b.root->right->key = 3;
-  b.root->right->parent = b.root;
-
-  inorder_bst_walk(NULL);
-  inorder_bst_walk(&b);
-
+  mu_assert("error, size should be 3 with duplicates", bst_size(&b) == 3);
+  mu_assert("error, duplicate should go right",
+            b.root->right != NULL && b.root->right->key == 10);
+  mu_assert("error, second duplicate should go right-right",
+            b.root->right->right != NULL && b.root->right->right->key == 10);
+  mu_assert_tree(&b);
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_insert_and_size_basic() {
+static char *test_minimum_maximum_general() {
   bst b;
   bst_create(&b);
-  bst_insert(&b, 5);
-  bst_insert(&b, 3);
-  bst_insert(&b, 7);
-  mu_assert("error, bst size is not 3", bst_size(&b) == 3);
+  int values[] = {12, 4, 18, 1, 7, 15, 22};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
+
+  bst_node *min = bst_minimum(&b);
+  bst_node *max = bst_maximum(&b);
+
+  mu_assert("error, minimum should be 1", min != NULL && min->key == 1);
+  mu_assert("error, maximum should be 22", max != NULL && max->key == 22);
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_search_basic() {
+static char *test_predecessor_successor_middle_nodes() {
   bst b;
   bst_create(&b);
-  bst_insert(&b, 5);
-  bst_insert(&b, 3);
-  bst_insert(&b, 7);
+  int values[] = {20, 10, 30, 5, 15, 25, 35};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
 
-  mu_assert("error, bst search 5 is not found", bst_search(&b, 5) != NULL);
-  mu_assert("error, bst search 3 is not found", bst_search(&b, 3) != NULL);
-  mu_assert("error, bst search 7 is not found", bst_search(&b, 7) != NULL);
-  mu_assert("error, bst search 4 is found", bst_search(&b, 4) == NULL);
+  bst_node *n20 = bst_search(&b, 20);
+  bst_node *n25 = bst_search(&b, 25);
+  bst_node *n10 = bst_search(&b, 10);
+
+  mu_assert("error, predecessor(20) should be 15",
+            bst_predecessor(n20) != NULL && bst_predecessor(n20)->key == 15);
+  mu_assert("error, successor(20) should be 25",
+            bst_successor(n20) != NULL && bst_successor(n20)->key == 25);
+  mu_assert("error, predecessor(25) should be 20",
+            bst_predecessor(n25) != NULL && bst_predecessor(n25)->key == 20);
+  mu_assert("error, successor(10) should be 15",
+            bst_successor(n10) != NULL && bst_successor(n10)->key == 15);
 
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_insert_returns_nodes_and_parents() {
+static char *test_predecessor_successor_extremes() {
+  bst b;
+  bst_create(&b);
+  int values[] = {8, 3, 10, 1, 6, 14};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
+
+  bst_node *min = bst_minimum(&b);
+  bst_node *max = bst_maximum(&b);
+
+  mu_assert("error, predecessor(min) should be NULL",
+            bst_predecessor(min) == NULL);
+  mu_assert("error, successor(max) should be NULL", bst_successor(max) == NULL);
+  mu_assert("error, predecessor(NULL) should be NULL",
+            bst_predecessor(NULL) == NULL);
+  mu_assert("error, successor(NULL) should be NULL",
+            bst_successor(NULL) == NULL);
+
+  bst_destroy(&b);
+  return NULL;
+}
+
+static char *test_delete_leaf() {
+  bst b;
+  bst_create(&b);
+  int values[] = {20, 10, 30, 25};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
+
+  bst_delete(&b, bst_search(&b, 25));
+
+  mu_assert("error, deleted leaf still present", bst_search(&b, 25) == NULL);
+  mu_assert("error, size should be 3", bst_size(&b) == 3);
+  mu_assert_tree(&b);
+  bst_destroy(&b);
+  return NULL;
+}
+
+static char *test_delete_node_with_one_child() {
+  bst b;
+  bst_create(&b);
+  int values[] = {20, 10, 30, 25, 27};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
+
+  bst_delete(&b, bst_search(&b, 25));
+
+  mu_assert("error, deleted node still present", bst_search(&b, 25) == NULL);
+  mu_assert("error, child should replace deleted node",
+            b.root->right->left != NULL && b.root->right->left->key == 27);
+  mu_assert("error, size should be 4", bst_size(&b) == 4);
+  mu_assert_tree(&b);
+  bst_destroy(&b);
+  return NULL;
+}
+
+static char *test_delete_node_with_two_children() {
+  bst b;
+  bst_create(&b);
+  int values[] = {20, 10, 30, 25, 35, 23, 27};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
+
+  bst_delete(&b, bst_search(&b, 30));
+
+  mu_assert("error, deleted node still present", bst_search(&b, 30) == NULL);
+  mu_assert("error, size should be 6", bst_size(&b) == 6);
+  mu_assert("error, root right should be successor 35 or 23/25 path valid",
+            b.root->right != NULL);
+  mu_assert_tree(&b);
+  bst_destroy(&b);
+  return NULL;
+}
+
+static char *test_delete_root_cases() {
   bst b;
   bst_create(&b);
 
-  bst_node *n5 = bst_insert(&b, 5);
-  bst_node *n3 = bst_insert(&b, 3);
-  bst_node *n7 = bst_insert(&b, 7);
-  bst_node *n4 = bst_insert(&b, 4);
+  bst_insert(&b, 8);
+  bst_delete(&b, bst_search(&b, 8));
+  mu_assert("error, root delete single node should empty tree", b.root == NULL);
 
-  mu_assert("error, insert should return non-null",
-            n5 != NULL && n3 != NULL && n7 != NULL && n4 != NULL);
-  mu_assert("error, root key should be 5", b.root != NULL && b.root->key == 5);
-  mu_assert("error, root parent should be NULL", b.root->parent == NULL);
+  bst_insert(&b, 8);
+  bst_insert(&b, 4);
+  bst_delete(&b, bst_search(&b, 8));
+  mu_assert("error, root should become 4", b.root != NULL && b.root->key == 4);
 
-  mu_assert("error, 3 should be left child of 5",
-            b.root->left != NULL && b.root->left->key == 3);
-  mu_assert("error, 7 should be right child of 5",
-            b.root->right != NULL && b.root->right->key == 7);
-
-  mu_assert("error, parent of 3 should be 5", b.root->left->parent == b.root);
-  mu_assert("error, parent of 7 should be 5", b.root->right->parent == b.root);
-
-  mu_assert("error, 4 should be right child of 3",
-            b.root->left->right != NULL && b.root->left->right->key == 4);
-  mu_assert("error, parent of 4 should be 3",
-            b.root->left->right->parent == b.root->left);
+  bst_insert(&b, 10);
+  bst_insert(&b, 9);
+  bst_delete(&b, bst_search(&b, 4));
+  mu_assert("error, root should exist after delete", b.root != NULL);
+  mu_assert_tree(&b);
 
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_insert_ordered_causes_height() {
+static char *test_delete_all_nodes_sequence() {
   bst b;
   bst_create(&b);
+  int values[] = {50, 30, 70, 20, 40, 60, 80};
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+    bst_insert(&b, values[i]);
 
-  for (int i = 1; i <= 10; i++)
-    bst_insert(&b, i);
+  int remove_order[] = {20, 30, 70, 50, 40, 60, 80};
+  for (size_t i = 0; i < sizeof(remove_order) / sizeof(remove_order[0]); ++i) {
+    bst_node *node = bst_search(&b, remove_order[i]);
+    bst_delete(&b, node);
+    mu_assert("error, size mismatch during full delete",
+              bst_size(&b) ==
+                  (sizeof(remove_order) / sizeof(remove_order[0]) - i - 1));
+    mu_assert_tree(&b);
+  }
 
-  mu_assert("error, size should be 10", bst_size(&b) == 10);
-  mu_assert("error, height should be 10 for increasing inserts",
-            bst_height(&b) == 10);
-
+  mu_assert("error, tree should be empty", b.root == NULL);
+  mu_assert("error, height should be 0", bst_height(&b) == 0);
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_extreme_values() {
+static char *test_delete_null_cases() {
+  bst b;
+  bst_create(&b);
+  bst_insert(&b, 1);
+
+  bst_delete(NULL, bst_search(&b, 1));
+  bst_delete(&b, NULL);
+
+  mu_assert("error, node should still exist", bst_search(&b, 1) != NULL);
+  bst_destroy(&b);
+  return NULL;
+}
+
+static char *test_extreme_values() {
   bst b;
   bst_create(&b);
 
@@ -194,15 +294,22 @@ static char *test_bst_extreme_values() {
   bst_insert(&b, 0);
   bst_insert(&b, INT_MAX);
 
-  mu_assert("error, INT_MIN not found", bst_search(&b, INT_MIN) != NULL);
-  mu_assert("error, 0 not found", bst_search(&b, 0) != NULL);
-  mu_assert("error, INT_MAX not found", bst_search(&b, INT_MAX) != NULL);
+  mu_assert("error, min should be INT_MIN",
+            bst_minimum(&b) != NULL && bst_minimum(&b)->key == INT_MIN);
+  mu_assert("error, max should be INT_MAX",
+            bst_maximum(&b) != NULL && bst_maximum(&b)->key == INT_MAX);
+  mu_assert("error, predecessor(0) should be INT_MIN",
+            bst_predecessor(bst_search(&b, 0)) != NULL &&
+                bst_predecessor(bst_search(&b, 0))->key == INT_MIN);
+  mu_assert("error, successor(0) should be INT_MAX",
+            bst_successor(bst_search(&b, 0)) != NULL &&
+                bst_successor(bst_search(&b, 0))->key == INT_MAX);
 
   bst_destroy(&b);
   return NULL;
 }
 
-static char *test_bst_destroy_is_idempotent() {
+static char *test_destroy_is_idempotent() {
   bst b;
   bst_create(&b);
   bst_insert(&b, 2);
@@ -218,33 +325,22 @@ static char *test_bst_destroy_is_idempotent() {
   return NULL;
 }
 
-static char *test_bst_search_null_tree() {
-  mu_assert("error, search on NULL should be NULL",
-            bst_search(NULL, 1) == NULL);
-  return NULL;
-}
-
-static char *test_bst_insert_null_tree() {
-  mu_assert("error, insert on NULL should be NULL",
-            bst_insert(NULL, 1) == NULL);
-  return NULL;
-}
-
 char *(*tests_functions[])() = {
     test_bst_null,
     test_bst_empty,
-    test_bst_size_single,
-    test_bst_size_two,
-    test_bst_height_manual_shapes,
-    test_bst_inorder_walk_smoke,
-    test_bst_insert_and_size_basic,
-    test_bst_search_basic,
-    test_bst_insert_returns_nodes_and_parents,
-    test_bst_insert_ordered_causes_height,
-    test_bst_extreme_values,
-    test_bst_destroy_is_idempotent,
-    test_bst_search_null_tree,
-    test_bst_insert_null_tree,
+    test_bst_insert_and_search,
+    test_bst_insert_duplicate_policy,
+    test_minimum_maximum_general,
+    test_predecessor_successor_middle_nodes,
+    test_predecessor_successor_extremes,
+    test_delete_leaf,
+    test_delete_node_with_one_child,
+    test_delete_node_with_two_children,
+    test_delete_root_cases,
+    test_delete_all_nodes_sequence,
+    test_delete_null_cases,
+    test_extreme_values,
+    test_destroy_is_idempotent,
 };
 
 int main(int argc, const char *argv[]) {

@@ -49,4 +49,29 @@ bst_node *bst_search(const bst *self, int value);
  */
 bst_node *bst_insert(bst *self, int value);
 
+/*
+ * Get minimum node in tree
+ */
+bst_node *bst_minimum(const bst *self);
+
+/*
+ * Get maximum node in tree
+ */
+bst_node *bst_maximum(const bst *self);
+
+/*
+ * Get predecessor of a given node
+ */
+bst_node *bst_predecessor(bst_node *self);
+
+/*
+ * Get successor of a given node
+ */
+bst_node *bst_successor(bst_node *self);
+
+/*
+ * Delete a node from tree
+ */
+void bst_delete(bst *self, bst_node *node);
+
 #endif // BST_H
